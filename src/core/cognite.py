@@ -6,13 +6,18 @@ Credentials are always supplied through environment variables, never source code
 from __future__ import annotations
 
 import os
+from pathlib import Path
 
 from cognite.client import ClientConfig, CogniteClient
 from cognite.client.credentials import OAuthClientCredentials, Token
+from dotenv import load_dotenv
+
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
 
 
 def create_cognite_client() -> CogniteClient:
     """Create a Cognite client from the local ``COGNITE_*`` environment variables."""
+    load_dotenv(PROJECT_ROOT / ".env")
     project = _required("COGNITE_PROJECT")
     base_url = _base_url()
     client_name = os.environ.get("COGNITE_CLIENT_NAME", "python-playground").strip()
