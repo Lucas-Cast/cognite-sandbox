@@ -1,0 +1,23 @@
+[project]
+name = "python-playground"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+authors = [
+    { name = "Lucas Castelano", email = "lucas.castelano27@gmail.com" }
+]
+requires-python = ">=3.13"
+dependencies = [
+    "cognite-sdk>=8.15.0",
+    "industrial-model[cli]>=1.13.0",
+]
+
+[project.scripts]
+scripts = "scripts:main"
+
+[tool.uv]
+package = false
+
+[build-system]
+requires = ["uv_build>=0.12.3,<0.13.0"]
+build-backend = "uv_build"
