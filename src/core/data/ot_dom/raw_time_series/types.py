@@ -1,0 +1,73 @@
+from __future__ import annotations
+
+from typing import Literal, TypeAlias
+
+RawTimeSeriesQueryProperty: TypeAlias = Literal[
+    "name",
+    "description",
+    "tags",
+    "aliases",
+    "sourceId",
+    "sourceContext",
+    "sourceCreatedUser",
+    "sourceUpdatedUser",
+    "type",
+    "sourceUnit",
+]
+RawTimeSeriesGroupByProperty: TypeAlias = Literal[
+    "name",
+    "description",
+    "sourceId",
+    "sourceContext",
+    "source",
+    "sourceCreatedUser",
+    "sourceUpdatedUser",
+    "isStep",
+    "sourceUnit",
+    "unit",
+    "stateSet",
+    "counterMaxDelta",
+    "counterRollOver",
+    "isActive",
+    "isManualInput",
+    "maxValue",
+    "minValue",
+    "resetType",
+    "scrapReason",
+    "targetValue",
+    "timeSeriesService",
+    "timeSeriesSubservice",
+    "typicalValue",
+    "uom",
+]
+RawTimeSeriesAggregationProperty: TypeAlias = Literal[
+    "externalId",
+    "space",
+    "name",
+    "description",
+    "sourceId",
+    "sourceContext",
+    "source",
+    "sourceCreatedUser",
+    "sourceUpdatedUser",
+    "isStep",
+    "sourceUnit",
+    "unit",
+    "stateSet",
+    "counterMaxDelta",
+    "counterRollOver",
+    "isActive",
+    "isManualInput",
+    "maxValue",
+    "minValue",
+    "resetType",
+    "scrapReason",
+    "targetValue",
+    "timeSeriesService",
+    "timeSeriesSubservice",
+    "typicalValue",
+    "uom",
+]
+RawTimeSeriesIncludeProperty: TypeAlias = Literal[
+    "resetType", "scrapReason", "timeSeriesService", "timeSeriesSubservice"
+]
