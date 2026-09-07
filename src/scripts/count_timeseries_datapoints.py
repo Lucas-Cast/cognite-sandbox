@@ -1,4 +1,4 @@
-"""Count OT time series with datapoints for one service/subservice pair.
+"""Count OT time series with datapoints matching the configured filters.
 
 Edit the constants below, then run this file from the repository root.
 """
@@ -26,15 +26,37 @@ from core.data.ot_dom import OtClient
 from core.data.ot_dom.curated_time_series.filters import CuratedTimeSeriesFilter
 from core.data.ot_dom.models import CuratedTimeSeries, RawTimeSeries
 from core.data.ot_dom.raw_time_series.filters import RawTimeSeriesFilter
+from core.line_asset_tree_service import (
+    AssetExternalIdsByLevel,
+    LineAssetTreeService,
+)
 
 # --- Configuration ---------------------------------------------------------
 # Choose which OT view to inspect: "raw" or "curated".
 TIME_SERIES_KIND: Literal["raw", "curated"] = "curated"
 
-# These are the external IDs of the OT TimeSeriesService and
-# TimeSeriesSubservice instances to inspect.
+# These are optional external IDs of the OT TimeSeriesService and
+# TimeSeriesSubservice instances to inspect. They are not applied when
+# NAME_CONTAINS is set, because CDF search does not support these nested filters.
 SERVICE_EXTERNAL_ID = "TSSE-GC"
 SUBSERVICE_EXTERNAL_ID = "TSSS-GC-DLT"
+
+# Optional text that must occur anywhere in the time series external ID.
+EXTERNAL_ID_CONTAINS = None
+
+# Optional text sent to CDF's full-text search, restricted to the name field.
+# CDF matches complete tokens and a prefix for the final token, not arbitrary
+# character substrings. Set this when SERVICE_EXTERNAL_ID and
+# SUBSERVICE_EXTERNAL_ID are empty.
+NAME_CONTAINS: str | None = None
+
+# The CDF search endpoint returns at most 1,000 results.
+NAME_SEARCH_LIMIT = 1_000
+
+# Optional Asset DOM Line external ID. When set, the script filters matching
+# time series in memory using their asset_external_id, then reports matching
+# time series per asset for its Zone, Machine, and System descendants.
+LINE_EXTERNAL_ID = "LNE-a33832a03a11376bd957d576abed79de"
 
 # CDF retrieves latest datapoints in batches. Keep this at or below 1,000.
 BATCH_SIZE = 1_000
@@ -80,9 +102,25 @@ def main() -> None:
 
     cognite_client = create_cognite_client()
     ot_client = OtClient(cognite_client)
+    line_asset_external_ids_by_level = (
+        LineAssetTreeService(cognite_client).descendant_asset_external_ids(
+            LINE_EXTERNAL_ID
+        )
+        if LINE_EXTERNAL_ID
+        else None
+    )
     time_series = _query_time_series(ot_client)
-    time_series_ids = [NodeId(item.space, item.external_id) for item in time_series]
     asset_metadata_by_time_series = _asset_metadata_by_time_series(time_series)
+    if line_asset_external_ids_by_level is not None:
+        time_series = _filter_time_series_by_line_assets(
+            time_series,
+            asset_metadata_by_time_series,
+            line_asset_external_ids_by_level,
+        )
+        asset_metadata_by_time_series = _asset_metadata_by_time_series(time_series)
+    time_series_ids = [
+        NodeId(space=item.space, external_id=item.external_id) for item in time_series
+    ]
     ids_with_datapoints = _ids_with_datapoints(cognite_client, time_series_ids)
 
     missing_ids = [
@@ -97,10 +135,21 @@ def main() -> None:
     print(f"Time series kind: {TIME_SERIES_KIND}")
     print(f"Service external ID: {SERVICE_EXTERNAL_ID}")
     print(f"Subservice external ID: {SUBSERVICE_EXTERNAL_ID}")
+    print(f"External ID contains: {EXTERNAL_ID_CONTAINS}")
+    print(f"Name search: {NAME_CONTAINS}")
+    print(f"Line external ID: {LINE_EXTERNAL_ID}")
+    if NAME_CONTAINS:
+        print("Service/subservice filters: not applied to CDF name search")
     print(f"Matching time series: {total}")
     print(f"With datapoints: {with_datapoints}")
     print(f"Without datapoints: {len(missing_ids)}")
     print(f"Time series with any datapoint: {any_datapoint_coverage:.2f}%")
+
+    if line_asset_external_ids_by_level is not None:
+        _print_line_asset_time_series_summary(
+            time_series,
+            line_asset_external_ids_by_level,
+        )
 
     if PRINT_TIME_SERIES_WITHOUT_DATAPOINTS and missing_ids:
         print("\nTime series without datapoints:")
@@ -117,17 +166,113 @@ def main() -> None:
 
 def _query_time_series(ot_client: OtClient) -> list[RawTimeSeries | CuratedTimeSeries]:
     if TIME_SERIES_KIND == "raw":
-        raw_filters: RawTimeSeriesFilter = {
-            "timeSeriesService": {"externalId": {"eq": SERVICE_EXTERNAL_ID}},
-            "timeSeriesSubservice": {"externalId": {"eq": SUBSERVICE_EXTERNAL_ID}},
-        }
-        return list(ot_client.raw_time_series.query_all_pages(filters=raw_filters))
+        raw_filters = _raw_time_series_filters()
+        time_series = _raw_time_series_query(ot_client, raw_filters)
+    else:
+        curated_filters = _curated_time_series_filters()
+        time_series = _curated_time_series_query(ot_client, curated_filters)
 
-    curated_filters: CuratedTimeSeriesFilter = {
-        "timeSeriesService": {"externalId": {"eq": SERVICE_EXTERNAL_ID}},
-        "timeSeriesSubservice": {"externalId": {"eq": SUBSERVICE_EXTERNAL_ID}},
-    }
-    return list(ot_client.curated_time_series.query_all_pages(filters=curated_filters))
+    if NAME_CONTAINS and len(time_series) == NAME_SEARCH_LIMIT:
+        raise RuntimeError(
+            "The CDF name search reached its 1,000-result limit. Refine the "
+            "filters to ensure the count is complete."
+        )
+    return [item for item in time_series if _matches_external_id_contains(item)]
+
+
+def _raw_time_series_query(
+    ot_client: OtClient,
+    filters: RawTimeSeriesFilter,
+) -> list[RawTimeSeries]:
+    if not NAME_CONTAINS:
+        return list(ot_client.raw_time_series.query_all_pages(filters=filters))
+    return list(
+        ot_client.raw_time_series.search(
+            query=NAME_CONTAINS,
+            query_properties=["name"],
+            query_operator="AND",
+            limit=NAME_SEARCH_LIMIT,
+        )
+    )
+
+
+def _curated_time_series_query(
+    ot_client: OtClient,
+    filters: CuratedTimeSeriesFilter,
+) -> list[CuratedTimeSeries]:
+    if not NAME_CONTAINS:
+        return list(ot_client.curated_time_series.query_all_pages(filters=filters))
+    return list(
+        ot_client.curated_time_series.search(
+            query=NAME_CONTAINS,
+            query_properties=["name"],
+            query_operator="AND",
+            limit=NAME_SEARCH_LIMIT,
+        )
+    )
+
+
+def _raw_time_series_filters() -> RawTimeSeriesFilter:
+    filters: RawTimeSeriesFilter = {}
+    if SERVICE_EXTERNAL_ID:
+        filters["timeSeriesService"] = {"externalId": {"eq": SERVICE_EXTERNAL_ID}}
+    if SUBSERVICE_EXTERNAL_ID:
+        filters["timeSeriesSubservice"] = {"externalId": {"eq": SUBSERVICE_EXTERNAL_ID}}
+    return filters
+
+
+def _curated_time_series_filters() -> CuratedTimeSeriesFilter:
+    filters: CuratedTimeSeriesFilter = {}
+    if SERVICE_EXTERNAL_ID:
+        filters["timeSeriesService"] = {"externalId": {"eq": SERVICE_EXTERNAL_ID}}
+    if SUBSERVICE_EXTERNAL_ID:
+        filters["timeSeriesSubservice"] = {"externalId": {"eq": SUBSERVICE_EXTERNAL_ID}}
+    return filters
+
+
+def _matches_external_id_contains(item: RawTimeSeries | CuratedTimeSeries) -> bool:
+    return not EXTERNAL_ID_CONTAINS or EXTERNAL_ID_CONTAINS in item.external_id
+
+
+def _filter_time_series_by_line_assets(
+    time_series: Sequence[RawTimeSeries | CuratedTimeSeries],
+    asset_metadata_by_time_series: dict[tuple[str, str], tuple[str | None, str | None]],
+    asset_external_ids_by_level: AssetExternalIdsByLevel,
+) -> list[RawTimeSeries | CuratedTimeSeries]:
+    return [
+        item
+        for item in time_series
+        if _matches_line_asset_metadata(
+            asset_metadata_by_time_series[(item.space, item.external_id)],
+            asset_external_ids_by_level,
+        )
+    ]
+
+
+def _matches_line_asset_metadata(
+    asset_metadata: tuple[str | None, str | None],
+    asset_external_ids_by_level: AssetExternalIdsByLevel,
+) -> bool:
+    asset_level, asset_external_id = asset_metadata
+    return (
+        asset_level is not None
+        and asset_external_id in asset_external_ids_by_level.get(asset_level, set())
+    )
+
+
+def _print_line_asset_time_series_summary(
+    time_series: Sequence[RawTimeSeries | CuratedTimeSeries],
+    asset_external_ids_by_level: AssetExternalIdsByLevel,
+) -> None:
+    print(f"\nTime series for line {LINE_EXTERNAL_ID} (time series/assets):")
+    for asset_level in ("Zone", "Machine", "System"):
+        matching_time_series = sum(
+            _leaf_asset_level(item.tags) == asset_level for item in time_series
+        )
+        print(
+            f"{asset_level}: "
+            f"{matching_time_series}/{len(asset_external_ids_by_level[asset_level])}"
+        )
 
 
 def _ids_with_datapoints(
@@ -179,6 +324,9 @@ def _write_time_coverage_csv(
                 "time_series_kind": TIME_SERIES_KIND,
                 "service_external_id": SERVICE_EXTERNAL_ID,
                 "subservice_external_id": SUBSERVICE_EXTERNAL_ID,
+                "external_id_contains": EXTERNAL_ID_CONTAINS,
+                "name_contains": NAME_CONTAINS,
+                "line_external_id": LINE_EXTERNAL_ID,
                 "window_start": WINDOW_START.isoformat(),
                 "window_end": WINDOW_END.isoformat(),
                 "coverage_granularity": COVERAGE_GRANULARITY,
@@ -198,6 +346,9 @@ def _write_time_coverage_csv(
             "time_series_kind",
             "service_external_id",
             "subservice_external_id",
+            "external_id_contains",
+            "name_contains",
+            "line_external_id",
             "window_start",
             "window_end",
             "coverage_granularity",
@@ -226,14 +377,7 @@ def _asset_metadata_by_time_series(
 def _leaf_asset_metadata(
     tags: Sequence[str], assets: Sequence[InstanceId]
 ) -> tuple[str | None, str | None]:
-    asset_level = next(
-        (
-            tag.removeprefix("LeafAssetType:")
-            for tag in tags
-            if tag.startswith("LeafAssetType:")
-        ),
-        None,
-    )
+    asset_level = _leaf_asset_level(tags)
     if asset_level is None:
         return None, None
 
@@ -250,6 +394,17 @@ def _leaf_asset_metadata(
         None,
     )
     return asset_level, asset_external_id
+
+
+def _leaf_asset_level(tags: Sequence[str]) -> str | None:
+    return next(
+        (
+            tag.removeprefix("LeafAssetType:")
+            for tag in tags
+            if tag.startswith("LeafAssetType:")
+        ),
+        None,
+    )
 
 
 def _intervals_with_data(
@@ -294,18 +449,33 @@ def _format_percentage(value: float) -> str:
 
 
 def _id_key(instance_id: NodeId) -> tuple[str, str]:
+    return _instance_key(instance_id)
+
+
+def _instance_key(instance_id: NodeId | InstanceId) -> tuple[str, str]:
     return instance_id.space, instance_id.external_id
 
 
 def _validate_configuration() -> None:
     if TIME_SERIES_KIND not in {"raw", "curated"}:
         raise ValueError('TIME_SERIES_KIND must be "raw" or "curated".')
-    if SERVICE_EXTERNAL_ID.startswith("REPLACE_WITH_"):
-        raise ValueError("Set SERVICE_EXTERNAL_ID at the top of this script.")
-    if SUBSERVICE_EXTERNAL_ID.startswith("REPLACE_WITH_"):
-        raise ValueError("Set SUBSERVICE_EXTERNAL_ID at the top of this script.")
+    if not any(
+        (
+            SERVICE_EXTERNAL_ID,
+            SUBSERVICE_EXTERNAL_ID,
+            EXTERNAL_ID_CONTAINS,
+            NAME_CONTAINS,
+            LINE_EXTERNAL_ID,
+        )
+    ):
+        raise ValueError(
+            "Set SERVICE_EXTERNAL_ID, SUBSERVICE_EXTERNAL_ID, EXTERNAL_ID_CONTAINS, "
+            "NAME_CONTAINS, or LINE_EXTERNAL_ID."
+        )
     if BATCH_SIZE < 1 or BATCH_SIZE > 1_000:
         raise ValueError("BATCH_SIZE must be between 1 and 1,000.")
+    if NAME_SEARCH_LIMIT != 1_000:
+        raise ValueError("NAME_SEARCH_LIMIT must be 1,000.")
     if WINDOW_START.tzinfo is None or WINDOW_END.tzinfo is None:
         raise ValueError("WINDOW_START and WINDOW_END must include a timezone.")
     if WINDOW_END <= WINDOW_START:
