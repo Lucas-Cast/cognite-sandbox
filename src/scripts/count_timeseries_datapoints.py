@@ -38,8 +38,8 @@ TIME_SERIES_KIND: Literal["raw", "curated"] = "curated"
 # These are optional external IDs of the OT TimeSeriesService and
 # TimeSeriesSubservice instances to inspect. They are not applied when
 # NAME_CONTAINS is set, because CDF search does not support these nested filters.
-SERVICE_EXTERNAL_ID = "TSSE-GC"
-SUBSERVICE_EXTERNAL_ID = "TSSS-GC-DLT"
+SERVICE_EXTERNAL_ID = "TSSE-SC"
+SUBSERVICE_EXTERNAL_ID = "TSSS-SC-DLT"
 
 # Optional text that must occur anywhere in the time series external ID.
 EXTERNAL_ID_CONTAINS = None
@@ -68,7 +68,7 @@ PRINT_TIME_SERIES_WITHOUT_DATAPOINTS = False
 # for every matching time series in this time window.
 PRINT_TIME_SERIES_TIME_COVERAGE = True
 WINDOW_START = datetime(2026, 1, 1, tzinfo=UTC)
-WINDOW_END = datetime(2026, 9, 1, tzinfo=UTC)
+WINDOW_END = datetime(2026, 10, 1, tzinfo=UTC)
 # Use "1d" for daily coverage or "1mo" for monthly coverage.
 COVERAGE_GRANULARITY: Literal["1d", "1mo"] = "1mo"
 TIME_COVERAGE_CSV_FILENAME = "time_series_coverage.csv"
