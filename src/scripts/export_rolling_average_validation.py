@@ -22,7 +22,7 @@ from core.data.cognite_core import CogniteCoreClient
 # another asset's Rolling Average against its Good Quantity input.
 ROLLING_AVERAGE_TIME_SERIES_ID = NodeId(
     space="sp_kpi_glb_dat",
-    external_id="ZNE-ab47ac65ccbfeda107f81447b2cb00dd-kpi-RAO-1m",
+    external_id="ZNE-ab47ac65ccbfeda107f81447b2cb00dd-parameter-RAO",
 )
 GOOD_QUANTITY_TIME_SERIES_ID = NodeId(
     space="sp_otm_san_dat",

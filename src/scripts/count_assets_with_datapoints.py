@@ -38,11 +38,11 @@ from core.line_asset_tree_service import AssetExternalIdsByLevel, LineAssetTreeS
 # --- Configuration ---------------------------------------------------------
 # Choose which time series source to inspect: "raw", "curated", or
 # "CogniteTimeSeries" (the CDF Cognite Core view).
-TIME_SERIES_KIND: Literal["raw", "curated", "CogniteTimeSeries"] = "CogniteTimeSeries"
+TIME_SERIES_KIND: Literal["raw", "curated", "CogniteTimeSeries"] = "raw"
 
 # Applied only when TIME_SERIES_KIND is "CogniteTimeSeries". It is an exact
 # tag match; for example, "Kpi:IdleTime:Duration".
-KPI_TAG = "Kpi:RAO:1m"
+KPI_TAG = "Kpi:IDT:1m"
 
 # Applied only when TIME_SERIES_KIND is "raw" or "curated".
 SERVICE_EXTERNAL_ID = "TSSE-PC"

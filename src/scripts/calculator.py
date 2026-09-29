@@ -28,8 +28,9 @@ total_output = MultiTimeSeriesParameter(
             external_id="MCH-128715a606a7a5cfbf6979c8f08555b8-parameter-IDT",
         ),
     ],
-    aggregate_type="average",
-    granularity="1m",
+    # Use the raw, timestamp-aligned points. For these series, CDF's 1-minute
+    # ``average`` aggregate differs from the only raw datapoint in the bucket.
+    # The reducer below is the intended average across the three machines.
     reducer="average",
 )
 query = CalculatorQuery(
