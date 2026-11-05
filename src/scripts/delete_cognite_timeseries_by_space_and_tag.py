@@ -26,11 +26,18 @@ from core.data.cognite_core.models import CogniteTimeSeries
 # Keep node deletion requests small to avoid API timeouts on large graph changes.
 NODE_DELETE_BATCH_SIZE = 100
 
-# CDF instance space containing the CogniteTimeSeries nodes.
-TIME_SERIES_SPACE = "sp_evt_san_dat"
+# CDF instance spaces containing the CogniteTimeSeries nodes.
+TIME_SERIES_SPACES: list[str] = [
+    "sp_evt_san_dat",
+    "sp_evt_elp_dat",
+    "sp_evt_fra_dat",
+    "sp_kpi_san_dat",
+    "sp_kpi_elp_dat",
+    "sp_kpi_fra_dat",
+]
 
 # Exact tag that every matched CogniteTimeSeries must contain.
-TIME_SERIES_TAG = "KpiCode:RUP"
+TIME_SERIES_TAG = "KpiParameter:RUP"
 
 # Set to True to preview the selection without deleting it.
 DRY_RUN = False
@@ -40,9 +47,9 @@ def main() -> None:
     """Find matching nodes and act according to the configured dry-run mode."""
     _validate_configuration()
     cognite_client = create_cognite_client()
-    time_series = _find_time_series(cognite_client, TIME_SERIES_SPACE, TIME_SERIES_TAG)
+    time_series = _find_time_series(cognite_client, TIME_SERIES_SPACES, TIME_SERIES_TAG)
 
-    _print_matches(time_series, TIME_SERIES_SPACE, TIME_SERIES_TAG)
+    _print_matches(time_series, TIME_SERIES_SPACES, TIME_SERIES_TAG)
     if DRY_RUN:
         print("\nDry run enabled: no time series were deleted.")
         print("Set DRY_RUN = False to allow deletion.")
@@ -57,18 +64,18 @@ def main() -> None:
 
 
 def _validate_configuration() -> None:
-    if not TIME_SERIES_SPACE:
-        raise ValueError("Set TIME_SERIES_SPACE before running the script.")
+    if not TIME_SERIES_SPACES or any(not space for space in TIME_SERIES_SPACES):
+        raise ValueError("Set at least one valid space in TIME_SERIES_SPACES.")
     if not TIME_SERIES_TAG:
         raise ValueError("Set TIME_SERIES_TAG before running the script.")
 
 
 def _find_time_series(
-    cognite_client: CogniteClient, space: str, tag: str
+    cognite_client: CogniteClient, spaces: Sequence[str], tag: str
 ) -> list[CogniteTimeSeries]:
-    """Return time series in ``space`` that contain exactly ``tag``."""
+    """Return time series in ``spaces`` that contain exactly ``tag``."""
     filters: CogniteTimeSeriesFilter = {
-        "space": {"eq": space},
+        "space": {"in": list(spaces)},
         "tags": {"containsAll": [tag]},
     }
     return CogniteCoreClient(cognite_client).cognite_time_series.query_all_pages(
@@ -77,9 +84,9 @@ def _find_time_series(
 
 
 def _print_matches(
-    time_series: Sequence[CogniteTimeSeries], space: str, tag: str
+    time_series: Sequence[CogniteTimeSeries], spaces: Sequence[str], tag: str
 ) -> None:
-    print(f'Space: "{space}"')
+    print(f"Spaces: {', '.join(spaces)}")
     print(f'Tag exata: "{tag}"')
     print(f"CogniteTimeSeries encontradas: {len(time_series)}")
     for item in time_series:

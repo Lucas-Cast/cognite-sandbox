@@ -28,14 +28,16 @@ from core.data.cognite_core.models import CogniteTimeSeries
 
 # --- Configuration ---------------------------------------------------------
 # A time series is selected when it contains at least one exact tag below.
-TIME_SERIES_TAGS: list[str] = ["Kpi:RUP:1m", "KpiParameter:RUP"]
+TIME_SERIES_TAGS: list[str] = [
+    "KpiParameter:PLANQ",
+]
 
 # Optional instance-space restriction. Leave None to search every accessible
 # instance space that contains the configured tag.
-TIME_SERIES_SPACE: str | None = "sp_evt_glb_dat"
+TIME_SERIES_SPACE: str | None = "sp_kpi_san_dat"
 
 # Set to True to list the selected time series without deleting datapoints.
-DRY_RUN = True
+DRY_RUN = False
 
 # The CDF datapoints API supports the range from 1900 through 2050. The end is
 # exclusive, so this covers every supported timestamp before 2050-01-01 UTC.
